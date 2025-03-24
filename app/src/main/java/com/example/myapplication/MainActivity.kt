@@ -38,6 +38,10 @@ import androidx.core.content.PermissionChecker
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.Locale
+import android.content.Context
+import android.net.Uri
+import java.io.*
+import java.net.Socket
 
 typealias LumaListener = (luma: Double) -> Unit
 typealias brighterSideListener = (brighterSide: String) -> Unit
@@ -45,7 +49,8 @@ typealias brighterSideListener = (brighterSide: String) -> Unit
 class MainActivity : AppCompatActivity() {
 
 
-    private class LuminosityAnalyzer(private val listener: (brighterSide: String) -> Unit) : ImageAnalysis.Analyzer {
+    private class LuminosityAnalyzer(private val listener: (brighterSide: String) -> Unit) :
+        ImageAnalysis.Analyzer {
 
         private fun ByteBuffer.toByteArray(): ByteArray {
             rewind()    // Rewind the buffer to zero
@@ -99,7 +104,6 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-
     private var imageCapture: ImageCapture? = null
 
     private var videoCapture: VideoCapture<Recorder>? = null
@@ -109,7 +113,8 @@ class MainActivity : AppCompatActivity() {
 
     private val activityResultLauncher =
         registerForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions())
+            ActivityResultContracts.RequestMultiplePermissions()
+        )
         { permissions ->
             // Handle Permission granted/rejected
             var permissionGranted = true
@@ -118,9 +123,11 @@ class MainActivity : AppCompatActivity() {
                     permissionGranted = false
             }
             if (!permissionGranted) {
-                Toast.makeText(baseContext,
+                Toast.makeText(
+                    baseContext,
                     "Permission request denied",
-                    Toast.LENGTH_SHORT).show()
+                    Toast.LENGTH_SHORT
+                ).show()
             } else {
                 startCamera()
             }
@@ -161,16 +168,18 @@ class MainActivity : AppCompatActivity() {
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
             put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-            if(Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CameraX-Image")
             }
         }
 
         // Create output options object which contains file + metadata
         val outputOptions = ImageCapture.OutputFileOptions
-            .Builder(contentResolver,
+            .Builder(
+                contentResolver,
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                contentValues)
+                contentValues
+            )
             .build()
 
         // Set up image capture listener, which is triggered after photo has
@@ -184,7 +193,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun
-                        onImageSaved(output: ImageCapture.OutputFileResults){
+                        onImageSaved(output: ImageCapture.OutputFileResults) {
                     val msg = "Photo capture succeeded: ${output.savedUri}"
                     Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
                     Log.d(TAG, msg)
@@ -224,6 +233,9 @@ class MainActivity : AppCompatActivity() {
                 .also {
                     it.setAnalyzer(cameraExecutor, LuminosityAnalyzer { brighterSide ->
                         Log.d(TAG, "Brighter side: $brighterSide")
+                        val clientThread = ClientThread(brighterSide)
+                        val thread = Thread(clientThread)
+                        thread.start()
                     })
                 }
 
@@ -237,9 +249,10 @@ class MainActivity : AppCompatActivity() {
 
                 // Bind use cases to camera
                 cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview, imageCapture, imageAnalyzer)
+                    this, cameraSelector, preview, imageCapture, imageAnalyzer
+                )
 
-            } catch(exc: Exception) {
+            } catch (exc: Exception) {
                 Log.e(TAG, "Use case binding failed", exc)
             }
 
@@ -254,7 +267,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(
-            baseContext, it) == PackageManager.PERMISSION_GRANTED
+            baseContext, it
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     override fun onDestroy() {
@@ -266,7 +280,7 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "CameraXApp"
         private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
         private val REQUIRED_PERMISSIONS =
-            mutableListOf (
+            mutableListOf(
                 Manifest.permission.CAMERA,
                 Manifest.permission.RECORD_AUDIO
             ).apply {
@@ -275,4 +289,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }.toTypedArray()
     }
+
+
 }

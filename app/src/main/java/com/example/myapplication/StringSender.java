@@ -6,10 +6,10 @@ import java.net.Socket;
 
 // the ClientThread class performs
 // the networking operations
-class ClientThread implements Runnable {
+class StringSender implements Runnable {
     private final String message;
 
-    ClientThread(String message) {
+    StringSender(String message) {
         this.message = message;
     }
     @Override

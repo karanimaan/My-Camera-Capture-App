@@ -1,47 +1,32 @@
 package com.example.myapplication
 
-import android.os.Bundle
-import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import android.Manifest
-import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.os.Build
-import android.provider.MediaStore
+import android.os.Bundle
+import android.util.Log
+import android.widget.Button
+import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.Recorder
 import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
-import androidx.core.app.ActivityCompat
+import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import java.nio.ByteBuffer
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.core.Preview
-import androidx.camera.core.CameraSelector
-import android.util.Log
-import android.widget.Button
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.ImageProxy
-import androidx.camera.video.FallbackStrategy
-import androidx.camera.video.MediaStoreOutputOptions
-import androidx.camera.video.Quality
-import androidx.camera.video.QualitySelector
-import androidx.camera.video.VideoRecordEvent
-import androidx.camera.view.PreviewView
-import androidx.core.content.PermissionChecker
-import java.nio.ByteBuffer
-import java.text.SimpleDateFormat
-import java.util.Locale
-import android.content.Context
-import android.net.Uri
-import java.io.*
-import java.net.Socket
 
 typealias LumaListener = (luma: Double) -> Unit
 typealias brighterSideListener = (brighterSide: String) -> Unit
@@ -49,8 +34,9 @@ typealias brighterSideListener = (brighterSide: String) -> Unit
 class MainActivity : AppCompatActivity() {
 
 
-    private class LuminosityAnalyzer(private val listener: (brighterSide: String) -> Unit) :
-        ImageAnalysis.Analyzer {
+    private class MyAnalyzer(private val listener: brighterSideListener) : ImageAnalysis.Analyzer {
+
+        private var previousStartTime: Long = 0
 
         private fun ByteBuffer.toByteArray(): ByteArray {
             rewind()    // Rewind the buffer to zero
@@ -61,9 +47,20 @@ class MainActivity : AppCompatActivity() {
 
         override fun analyze(image: ImageProxy) {
 
-            val buffer = image.planes[0].buffer
-            val data = buffer.toByteArray()
-            val pixels = data.map { it.toInt() and 0xFF }
+            val startAnalyzeTime = System.currentTimeMillis()
+            //Log.d("Timing", "Current time: $startAnalyzeTime")
+            val repDuration = startAnalyzeTime - previousStartTime
+            Log.d("Timing", "Rep duration: $repDuration")
+            previousStartTime = startAnalyzeTime
+
+            val imageData = image.planes[0].buffer.toByteArray()
+
+            // send image
+            //Thread(ByteArraySender(imageData)).start()
+
+            //command
+
+            val pixels = imageData.map { it.toInt() and 0xFF }
             val luma = pixels.average()
 
             // my addition
@@ -82,7 +79,7 @@ class MainActivity : AppCompatActivity() {
             for (y in 0 until height) {
                 for (x in 0 until width) {
                     val index = y * width + x
-                    val pixel = data[index].toInt() and 0xFF
+                    val pixel = imageData[index].toInt() and 0xFF
 
                     if (x < width / 2) {
                         leftPixels.add(pixel)  // Left half
@@ -95,9 +92,19 @@ class MainActivity : AppCompatActivity() {
             val lumaLeft = leftPixels.average()
             val lumaRight = rightPixels.average()
 
-            val brighterSide = if (lumaLeft > lumaRight) "Left" else "Right"
+            val command = if (lumaLeft > lumaRight) "s" else "r"
 
-            listener(brighterSide)
+            val endAnalyzeTime = System.currentTimeMillis()
+            val analyzeDuration = endAnalyzeTime - startAnalyzeTime
+            Log.d("Timing", "Analyze duration: $analyzeDuration")
+
+
+            // Attach timestamp to the message
+
+            // TODO Start timer
+
+
+            //Thread(StringSender(message)).start()  // Send to ESP
 
             image.close()
         }
@@ -154,62 +161,26 @@ class MainActivity : AppCompatActivity() {
         // Set up the listeners for take photo and video capture buttons
         val imageCaptureButton = findViewById<Button>(R.id.image_capture_button)
         imageCaptureButton.setOnClickListener { takePhoto() }
+        val videoCaptureButton = findViewById<Button>(R.id.video_capture_button)
+        videoCaptureButton.setOnClickListener { captureVideo() }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
     }
 
     private fun takePhoto() {
-        // Get a stable reference of the modifiable image capture use case
-        val imageCapture = imageCapture ?: return
-
-        // Create time stamped name and MediaStore entry.
-        val name = SimpleDateFormat(FILENAME_FORMAT, Locale.US)
-            .format(System.currentTimeMillis())
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CameraX-Image")
-            }
-        }
-
-        // Create output options object which contains file + metadata
-        val outputOptions = ImageCapture.OutputFileOptions
-            .Builder(
-                contentResolver,
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                contentValues
-            )
-            .build()
-
-        // Set up image capture listener, which is triggered after photo has
-        // been taken
-        imageCapture.takePicture(
-            outputOptions,
-            ContextCompat.getMainExecutor(this),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onError(exc: ImageCaptureException) {
-                    Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
-                }
-
-                override fun
-                        onImageSaved(output: ImageCapture.OutputFileResults) {
-                    val msg = "Photo capture succeeded: ${output.savedUri}"
-                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
-                    Log.d(TAG, msg)
-                }
-            }
-        )
+        sendMessage("r")
     }
 
-    private fun captureVideo() {}
+    private fun captureVideo() {
+        sendMessage("s")
+    }
 
     private fun startCamera() {
 
         // for image preview
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        val viewFinder = findViewById<PreviewView>(R.id.viewFinder)
+        val viewFinder = findViewById<PreviewView>(R.id.viewFinder) // preview component
 
         cameraProviderFuture.addListener({
             // Used to bind the lifecycle of cameras to the lifecycle owner
@@ -231,11 +202,8 @@ class MainActivity : AppCompatActivity() {
             val imageAnalyzer = ImageAnalysis.Builder()
                 .build()
                 .also {
-                    it.setAnalyzer(cameraExecutor, LuminosityAnalyzer { brighterSide ->
+                    it.setAnalyzer(cameraExecutor, MyAnalyzer { brighterSide ->
                         Log.d(TAG, "Brighter side: $brighterSide")
-                        val clientThread = ClientThread(brighterSide)
-                        val thread = Thread(clientThread)
-                        thread.start()
                     })
                 }
 
@@ -274,6 +242,28 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cameraExecutor.shutdown()
+
+
+    }
+
+    override fun onStop() {
+        super.onStop()
+
+        // format used by server
+        val message = "/Car?move=" + "s "
+
+        // TODO format message for Web_control_car.py
+        Thread(StringSender(message)).start()  // Send to ESP
+    }
+
+    override fun onPause() {
+        super.onPause()
+
+        // format used by server
+        val message = "/Car?move=" + "s "
+
+        // TODO format message for Web_control_car.py
+        Thread(StringSender(message)).start()  // Send to ESP
     }
 
     companion object {
@@ -288,6 +278,16 @@ class MainActivity : AppCompatActivity() {
                     add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 }
             }.toTypedArray()
+    }
+
+    fun sendMessage(command: String) {
+
+        // Get current timestamp (milliseconds since Unix epoch)
+        val timestamp = System.currentTimeMillis()
+
+        val message = "/Car?move=${command.lowercase(Locale.getDefault())} &$timestamp"
+
+        Thread(StringSender(message)).start()
     }
 
 

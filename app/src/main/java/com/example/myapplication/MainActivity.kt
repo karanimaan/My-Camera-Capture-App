@@ -68,19 +68,15 @@ class MainActivity : AppCompatActivity() {
             previousStartTime = startAnalyzeTime
 
             //command
-            if (generateImage == true) {
-                analyzeAndGenerateImage(image, sendMessage)
-            } else {
-                analyzeImage(image)
-            }
-            /*
+            analyzeAndGenerateImage(image, sendMessage)
+
             val endAnalyzeTime = System.currentTimeMillis()
             val analyzeDuration = endAnalyzeTime - startAnalyzeTime
             Log.d("Timing", "Analyze duration: $analyzeDuration")
-            val message = "/Car?move=${command.lowercase()} &$endAnalyzeTime"
+            val message = "/Car?move=${blockLateralPosition}"
             Thread(StringSender(message)).start()
             Log.d("Timing", "endAnalyzeTime: $endAnalyzeTime")
-*/
+
             image.close()
         }
 
@@ -132,7 +128,7 @@ class MainActivity : AppCompatActivity() {
                     (leftCount > 100 && rightCount > 100) -> "centre"
                     (leftCount > rightCount) -> "left"
                     (rightCount > leftCount) -> "right"
-                    else -> "none"
+                    else -> "none"  // both 0
                 }
                 sendMessage(blockLateralPosition)
 
